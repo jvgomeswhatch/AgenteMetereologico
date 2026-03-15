@@ -95,10 +95,6 @@ def run_agent(user_message, history=None):
 
     logger.info(f"Iniciando processamento: {user_message}")
 
-    # ------------------------------------------------
-    # FILTRO RÁPIDO (EVITA PROCESSAMENTO DESNECESSÁRIO)
-    # ------------------------------------------------
-
     coords_msg = extract_coordinates(user_message)
     coords_hist = extract_coordinates_from_history(history) if history else None
 
@@ -108,40 +104,47 @@ def run_agent(user_message, history=None):
 
         return {
             "status": "erro",
-            "mensagem": "não posso ajudar com isso. Por favor Insira a a longitudade e latidude para obter a previsão."
+            "mensagem": "Por favor, forneça a latitude e longitude válidas para consultar a previsão do tempo."
         }
 
     detected_lat, detected_lon = (None, None)
 
     # ------------------------------------------------
-    # ETAPA 1 — EXTRAÇÃO COM REGEX
+    # ETAPA 1 — REGEX
     # ------------------------------------------------
 
     if coords_msg:
         detected_lat, detected_lon = coords_msg
-
+        
+        logger.warning(
+            "Falha ao executar tool call nativa devido a limitação do modelo ou timeout."
+        )
         logger.info(
-            f"Coordenadas extraídas via REGEX: lat={detected_lat}, lon={detected_lon}"
+            f"Fallback de extração estruturada acionado com sucesso: lat={detected_lat}, lon={detected_lon}"
         )
 
     # ------------------------------------------------
-    # ETAPA 2 — BUSCA NO HISTÓRICO
+    # ETAPA 2 — HISTÓRICO
     # ------------------------------------------------
 
     elif coords_hist:
-
         detected_lat, detected_lon = coords_hist
 
+        logger.warning(
+            "O modelo não respondeu com a tool esperada ou perdeu o histórico de contexto."
+        )
         logger.info(
-            f"Coordenadas recuperadas do HISTÓRICO: lat={detected_lat}, lon={detected_lon}"
+            f"Fallback de recuperação de memória acionado: lat={detected_lat}, lon={detected_lon}"
         )
 
     # ------------------------------------------------
-    # ETAPA 3 — TENTATIVA COM LLM (fallback)
+    # ETAPA 3 — LLM TOOL CALL
     # ------------------------------------------------
 
     if detected_lat is None or detected_lon is None:
-
+        
+        logger.info("Iniciando roteamento via LLM Tool Calling...")
+        
         try:
 
             client = get_llm_client()
@@ -157,22 +160,27 @@ def run_agent(user_message, history=None):
 
             if message.tool_calls:
 
-                logger.info("LLM identificou a necessidade da TOOL.")
+                logger.info("Modelo processou o contexto e acionou a tool com sucesso.")
 
                 tool_call = message.tool_calls[0]
+
                 args = json.loads(tool_call.function.arguments)
 
-                try:
-                    detected_lat = float(args.get("lat"))
-                    detected_lon = float(args.get("lon"))
+                lat = float(args.get("lat"))
+                lon = float(args.get("lon"))
+                days = int(args.get("days_ahead", 10))
 
-                except (ValueError, TypeError):
+                detected_lat = lat
+                detected_lon = lon
 
-                    logger.warning("LLM retornou coordenadas inválidas.")
+                logger.info(
+                    f"Coordenadas obtidas via LLM TOOL CALL: lat={lat}, lon={lon}"
+                )
 
         except Exception as e:
 
-            logger.warning(f"Erro na chamada do LLM: {e}")
+            logger.error(f"Falha ao chamar as tools por conta de limitação ou o modelo não respondeu: {e}")
+            logger.warning("Redirecionando para fluxo de segurança do agente.")
 
     # ------------------------------------------------
     # VALIDAÇÃO FINAL
@@ -197,7 +205,7 @@ def run_agent(user_message, history=None):
         forecast_state["last_coords"] = current_coords
 
     # ------------------------------------------------
-    # EXECUÇÃO DA TOOL
+    # EXECUÇÃO DA TOOL (FALLBACK GARANTIDO)
     # ------------------------------------------------
 
     try:

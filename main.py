@@ -14,7 +14,6 @@ forecast_state = {
     "last_coords": (None, None)
 }
 
-
 def extract_coordinates(text):
     if not isinstance(text, str):
         return None
@@ -109,9 +108,7 @@ def run_agent(user_message, history=None):
 
     detected_lat, detected_lon = (None, None)
 
-    # ------------------------------------------------
     # ETAPA 1 — REGEX
-    # ------------------------------------------------
 
     if coords_msg:
         detected_lat, detected_lon = coords_msg
@@ -123,10 +120,8 @@ def run_agent(user_message, history=None):
             f"Fallback de extração estruturada acionado com sucesso: lat={detected_lat}, lon={detected_lon}"
         )
 
-    # ------------------------------------------------
     # ETAPA 2 — HISTÓRICO
-    # ------------------------------------------------
-
+    
     elif coords_hist:
         detected_lat, detected_lon = coords_hist
 
@@ -137,9 +132,7 @@ def run_agent(user_message, history=None):
             f"Fallback de recuperação de memória acionado: lat={detected_lat}, lon={detected_lon}"
         )
 
-    # ------------------------------------------------
     # ETAPA 3 — LLM TOOL CALL
-    # ------------------------------------------------
 
     if detected_lat is None or detected_lon is None:
         
@@ -182,10 +175,8 @@ def run_agent(user_message, history=None):
             logger.error(f"Falha ao chamar as tools por conta de limitação ou o modelo não respondeu: {e}")
             logger.warning("Redirecionando para fluxo de segurança do agente.")
 
-    # ------------------------------------------------
     # VALIDAÇÃO FINAL
-    # ------------------------------------------------
-
+   
     if detected_lat is None or detected_lon is None:
 
         return {
@@ -193,9 +184,7 @@ def run_agent(user_message, history=None):
             "mensagem": "não posso ajudar com isso. Por favor Insira a a longitudade e latidude para obter a previsão."
         }
 
-    # ------------------------------------------------
     # CONTROLE DE ESTADO
-    # ------------------------------------------------
 
     current_coords = (detected_lat, detected_lon)
 
@@ -204,10 +193,8 @@ def run_agent(user_message, history=None):
         forecast_state["offset"] = 0
         forecast_state["last_coords"] = current_coords
 
-    # ------------------------------------------------
     # EXECUÇÃO DA TOOL (FALLBACK GARANTIDO)
-    # ------------------------------------------------
-
+    
     try:
 
         tool_result = get_daily_forecast(

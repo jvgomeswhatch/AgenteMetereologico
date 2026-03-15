@@ -6,7 +6,6 @@ API_TIMEOUT_SECONDS = 10
 DEFAULT_TIMEZONE = "America/Sao_Paulo"
 
 # Configuração centralizada de Logging
-# O nível INFO mostrará o fluxo normal. Em produção, você poderia mudar para WARNING ou ERROR.
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',

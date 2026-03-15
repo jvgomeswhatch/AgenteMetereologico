@@ -1,6 +1,3 @@
-requests
 gradio
+requests
 openai
-python-dotenv
-requests-cache
-openmeteo-requests

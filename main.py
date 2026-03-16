@@ -14,22 +14,31 @@ forecast_state = {
     "last_coords": (None, None)
 }
 
+
 def extract_coordinates(text):
+
     if not isinstance(text, str):
         return None
 
     normalized = text.replace(",", ".")
+
     numbers = re.findall(r"-?\d+(?:\.\d+)?", normalized)
 
     if len(numbers) < 2:
         return None
 
     try:
+
         lat = float(numbers[0])
         lon = float(numbers[1])
 
         if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
             return None
+
+        if lat < 0 and lon > 0:
+            logger.warning(
+                f"Coordenadas suspeitas: lat {lat} (sul) com lon {lon} (leste). Para Brasil, lon deveria ser negativa."
+            )
 
         return lat, lon
 
@@ -65,9 +74,7 @@ def extract_coordinates_from_history(history):
 
 def format_weather_response(lat, lon, forecast_data):
 
-    linhas = [
-        f"Previsão do tempo para latitude {lat} e longitude {lon}:\n"
-    ]
+    linhas = [f"Previsão do tempo para latitude {lat} e longitude {lon}:\n"]
 
     for dia in forecast_data:
 
@@ -77,9 +84,7 @@ def format_weather_response(lat, lon, forecast_data):
         precipitacao = dia.get("precipitacao_mm", "N/A")
 
         linhas.append(
-            f"{data} | Temperatura máxima: {temp_max}°C | "
-            f"Temperatura mínima: {temp_min}°C | "
-            f"Precipitação: {precipitacao} mm"
+            f"{data} | Temperatura máxima: {temp_max}°C | Temperatura mínima: {temp_min}°C | Precipitação: {precipitacao} mm"
         )
 
     return "\n".join(linhas)
@@ -94,97 +99,127 @@ def run_agent(user_message, history=None):
 
     logger.info(f"Iniciando processamento: {user_message}")
 
-    coords_msg = extract_coordinates(user_message)
-    coords_hist = extract_coordinates_from_history(history) if history else None
-
-    if coords_msg is None and coords_hist is None:
-
-        logger.warning("Mensagem fora do contexto meteorológico.")
-
-        return {
-            "status": "erro",
-            "mensagem": "Por favor, forneça a latitude e longitude válidas para consultar a previsão do tempo."
-        }
-
     detected_lat, detected_lon = (None, None)
 
-    # ETAPA 1 — REGEX
+    # Extração determinística da entrada do usuário
+    user_coords = extract_coordinates(user_message)
 
-    if coords_msg:
-        detected_lat, detected_lon = coords_msg
-        
-        logger.warning(
-            "Falha ao executar tool call nativa devido a limitação do modelo ou timeout."
+    # --- ETAPA 1: TENTATIVA COM LLM ---
+
+    try:
+
+        client = get_llm_client()
+
+        response = client.chat.completions.create(
+
+            model=MODEL_NAME,
+
+            messages=[
+                {
+                    "role": "system",
+                    "content": """
+Você é um assistente estrito de previsão do tempo.
+
+REGRAS:
+- Use a ferramenta APENAS se o usuário fornecer latitude e longitude numéricas.
+- Nunca invente coordenadas.
+- Se não houver números, não use a ferramenta.
+"""
+                },
+                {"role": "user", "content": user_message}
+            ],
+
+            tools=tools_list,
+            tool_choice="auto"
         )
-        logger.info(
-            f"Fallback de extração estruturada acionado com sucesso: lat={detected_lat}, lon={detected_lon}"
-        )
 
-    # ETAPA 2 — HISTÓRICO
-    
-    elif coords_hist:
-        detected_lat, detected_lon = coords_hist
+        message = response.choices[0].message
 
-        logger.warning(
-            "O modelo não respondeu com a tool esperada ou perdeu o histórico de contexto."
-        )
-        logger.info(
-            f"Fallback de recuperação de memória acionado: lat={detected_lat}, lon={detected_lon}"
-        )
+        if message.tool_calls:
 
-    # ETAPA 3 — LLM TOOL CALL
+            logger.info("LLM identificou a necessidade da TOOL com sucesso.")
 
-    if detected_lat is None or detected_lon is None:
-        
-        logger.info("Iniciando roteamento via LLM Tool Calling...")
-        
-        try:
+            tool_call = message.tool_calls[0]
 
-            client = get_llm_client()
+            args = json.loads(tool_call.function.arguments)
 
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[{"role": "user", "content": user_message}],
-                tools=tools_list,
-                tool_choice="auto"
-            )
+            try:
 
-            message = response.choices[0].message
+                if args.get("lat") is not None:
+                    detected_lat = float(args.get("lat"))
 
-            if message.tool_calls:
+                if args.get("lon") is not None:
+                    detected_lon = float(args.get("lon"))
 
-                logger.info("Modelo processou o contexto e acionou a tool com sucesso.")
+                # --- NOVA PROTEÇÃO CONTRA ALTERAÇÃO DE COORDENADAS ---
 
-                tool_call = message.tool_calls[0]
+                if user_coords:
 
-                args = json.loads(tool_call.function.arguments)
+                    user_lat, user_lon = user_coords
 
-                lat = float(args.get("lat"))
-                lon = float(args.get("lon"))
-                days = int(args.get("days_ahead", 10))
+                    if (
+                        abs(user_lat - detected_lat) > 0.01
+                        or abs(user_lon - detected_lon) > 0.01
+                    ):
 
-                detected_lat = lat
-                detected_lon = lon
+                        logger.warning(
+                            f"LLM alterou coordenadas do usuário: input=({user_lat},{user_lon}) tool=({detected_lat},{detected_lon})"
+                        )
 
-                logger.info(
-                    f"Coordenadas obtidas via LLM TOOL CALL: lat={lat}, lon={lon}"
+                        detected_lat, detected_lon = None, None
+
+            except (ValueError, TypeError):
+
+                logger.warning(
+                    "LLM retornou coordenadas inválidas. Usando fallback."
                 )
 
-        except Exception as e:
+                detected_lat, detected_lon = None, None
 
-            logger.error(f"Falha ao chamar as tools por conta de limitação ou o modelo não respondeu: {e}")
-            logger.warning("Redirecionando para fluxo de segurança do agente.")
+        else:
 
-    # VALIDAÇÃO FINAL
-   
+            logger.info(
+                "LLM não acionou tool_calls. Iniciando fallback determinístico."
+            )
+
+    except Exception as e:
+
+        logger.warning(
+            f"Erro na chamada do LLM: {e}. Prosseguindo para fallback."
+        )
+
+    # --- ETAPA 2: FALLBACK (REGEX + HISTÓRICO) ---
+
+    if detected_lat is None or detected_lon is None:
+
+        if user_coords:
+
+            detected_lat, detected_lon = user_coords
+
+            logger.info(
+                f"Coordenadas extraídas via REGEX: lat={detected_lat}, lon={detected_lon}"
+            )
+
+        elif history:
+
+            coords_hist = extract_coordinates_from_history(history)
+
+            if coords_hist:
+
+                detected_lat, detected_lon = coords_hist
+
+                logger.info(
+                    f"Coordenadas recuperadas do HISTÓRICO: lat={detected_lat}, lon={detected_lon}"
+                )
+
     if detected_lat is None or detected_lon is None:
 
         return {
             "status": "erro",
-            "mensagem": "não posso ajudar com isso. Por favor Insira a a longitudade e latidude para obter a previsão."
+            "mensagem": "Por favor, informe a latitude e longitude válidas (ex: -23.55 -46.63)."
         }
 
-    # CONTROLE DE ESTADO
+    # --- ETAPA 3: EXECUÇÃO ---
 
     current_coords = (detected_lat, detected_lon)
 
@@ -193,15 +228,9 @@ def run_agent(user_message, history=None):
         forecast_state["offset"] = 0
         forecast_state["last_coords"] = current_coords
 
-    # EXECUÇÃO DA TOOL (FALLBACK GARANTIDO)
-    
     try:
 
-        tool_result = get_daily_forecast(
-            detected_lat,
-            detected_lon,
-            10
-        )
+        tool_result = get_daily_forecast(detected_lat, detected_lon, 10)
 
         if tool_result.get("status") != "sucesso":
 
@@ -218,7 +247,7 @@ def run_agent(user_message, history=None):
 
             return {
                 "status": "erro",
-                "mensagem": "Não há mais previsões disponíveis."
+                "mensagem": "Não há mais previsões disponíveis no momento."
             }
 
         end = start + forecast_state["chunk_size"]
@@ -262,18 +291,14 @@ if __name__ == "__main__":
     msg1 = "Qual a previsão para -23.55 -46.63?"
     res1 = run_agent(msg1)
 
-    print(
-        f"TESTE 1: {res1.get('resposta') or res1.get('mensagem')}"
-    )
+    print(f"TESTE 1: {res1.get('resposta') or res1.get('mensagem')}")
 
     historico_simulado = [
-        {"role": "user", "content": msg1},
+        {"role": "user", "content": "previsão para -23.55 -46.63"},
         {"role": "assistant", "content": res1.get('resposta', '')}
     ]
 
     msg2 = "e para os próximos dias?"
     res2 = run_agent(msg2, history=historico_simulado)
 
-    print(
-        f"\nTESTE 2: {res2.get('resposta') or res2.get('mensagem')}"
-    )
+    print(f"\nTESTE 2: {res2.get('resposta') or res2.get('mensagem')}")

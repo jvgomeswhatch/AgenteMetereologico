@@ -1,7 +1,31 @@
+import re
 import gradio as gr
 
 from main import run_agent
 from config import logger
+
+
+def is_valid_input(text: str) -> bool:
+
+    if not isinstance(text, str):
+        return False
+
+    text = text.strip()
+
+    has_numbers = any(char.isdigit() for char in text)
+
+    follow_up_words = ["próximos", "dias", "continua", "mais"]
+
+    if has_numbers:
+        return True
+
+    if any(word in text.lower() for word in follow_up_words):
+        return True
+
+    if len(text) < 3:
+        return False
+
+    return False
 
 
 def handle_message(message, history):
@@ -18,9 +42,18 @@ def handle_message(message, history):
 
     try:
 
+        # --- GATEKEEPER DE ENTRADA ---
+
+        if not is_valid_input(message):
+
+            logger.warning(f"Entrada bloqueada pelo gatekeeper: {message}")
+
+            return "Por favor, informe latitude e longitude (ex: -23.55 -46.63)."
+
         result = run_agent(message, history)
 
         if result.get("status") == "sucesso":
+
             return result.get("resposta")
 
         logger.warning(
@@ -44,7 +77,7 @@ def launch():
     demo = gr.ChatInterface(
         fn=handle_message,
         title="Agente de Previsão do Tempo | Desafio Técnico",
-        description="Informe latitude e longitude. Exemplo: -23.55 -46.63!!! O chat responde apenas a previsão dos próximos 3 dias para a localização informada."
+        description="Informe latitude e longitude. Exemplo: -23.55 -46.63. O chat responde apenas a previsão dos próximos 3 dias para a localização informada."
     )
 
     demo.launch(

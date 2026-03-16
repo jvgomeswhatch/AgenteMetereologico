@@ -101,8 +101,12 @@ def run_agent(user_message, history=None):
 
     detected_lat, detected_lon = (None, None)
 
-    # Extração determinística da entrada do usuário
+    # Extração determinística da entrada do usuário OU do histórico
     user_coords = extract_coordinates(user_message)
+    history_coords = extract_coordinates_from_history(history) if history else None
+    
+    # Define as coordenadas esperadas (prioriza a mensagem atual, senão usa o histórico)
+    expected_coords = user_coords or history_coords
 
     # --- ETAPA 1: TENTATIVA COM LLM ---
 
@@ -152,20 +156,20 @@ REGRAS:
                     detected_lon = float(args.get("lon"))
 
                 # --- NOVA PROTEÇÃO CONTRA ALTERAÇÃO DE COORDENADAS ---
+                if expected_coords:
 
-                if user_coords:
-
-                    user_lat, user_lon = user_coords
+                    exp_lat, exp_lon = expected_coords
 
                     if (
-                        abs(user_lat - detected_lat) > 0.01
-                        or abs(user_lon - detected_lon) > 0.01
+                        abs(exp_lat - detected_lat) > 0.01
+                        or abs(exp_lon - detected_lon) > 0.01
                     ):
 
                         logger.warning(
-                            f"LLM alterou coordenadas do usuário: input=({user_lat},{user_lon}) tool=({detected_lat},{detected_lon})"
+                            f"LLM alterou/alucinou coordenadas: esperado=({exp_lat},{exp_lon}) tool=({detected_lat},{detected_lon})"
                         )
 
+                        # Anula para acionar o fallback
                         detected_lat, detected_lon = None, None
 
             except (ValueError, TypeError):
@@ -192,25 +196,13 @@ REGRAS:
 
     if detected_lat is None or detected_lon is None:
 
-        if user_coords:
+        if expected_coords:
 
-            detected_lat, detected_lon = user_coords
+            detected_lat, detected_lon = expected_coords
 
             logger.info(
-                f"Coordenadas extraídas via REGEX: lat={detected_lat}, lon={detected_lon}"
+                f"Coordenadas recuperadas via Fallback: lat={detected_lat}, lon={detected_lon}"
             )
-
-        elif history:
-
-            coords_hist = extract_coordinates_from_history(history)
-
-            if coords_hist:
-
-                detected_lat, detected_lon = coords_hist
-
-                logger.info(
-                    f"Coordenadas recuperadas do HISTÓRICO: lat={detected_lat}, lon={detected_lon}"
-                )
 
     if detected_lat is None or detected_lon is None:
 
@@ -262,9 +254,9 @@ REGRAS:
             previsoes_chunk
         )
 
-        if not validate_forecast(resposta_formatada, previsoes_chunk):
+        if not validate_forecast(resposta_formatada, previsoes_chunk, expected_lat=detected_lat, expected_lon=detected_lon):
 
-            logger.error("Validação falhou: divergência de dados.")
+            logger.error("Validação falhou: divergência de dados ou coordenadas.")
 
             return {
                 "status": "erro",

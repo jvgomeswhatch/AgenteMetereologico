@@ -39,7 +39,7 @@ AGENTE/
 
 - 🐍 **Python 3.10+**
 - 🦙 **Ollama** instalado e rodando
-- 📥 Modelo **Llama 3.2:1b** (ou superior) baixado:
+- 📥 Modelo **Llama 3.2:1b** baixado:
 
 ```bash
 ollama pull llama3.2:1b

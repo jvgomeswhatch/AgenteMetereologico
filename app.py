@@ -76,15 +76,14 @@ def launch():
 
     demo = gr.ChatInterface(
         fn=handle_message,
-        title="Agente de Previsão do Tempo | Desafio Técnico",
-        description="Informe latitude e longitude. Exemplo: -23.55 -46.63. O chat responde apenas a previsão dos próximos 3 dias para a localização informada."
+        title="Agente de Previsão do Tempo | Desafio Técnico ClimaTempo 2026",
+        description="Informe latitude e longitude | Exemplo: -23.55 -46.63. O chat responde apenas a previsão dos próximos 3 dias para a localização informada."
     )
 
     demo.launch(
         debug=True,
         show_error=True
     )
-
 
 if __name__ == "__main__":
     launch()

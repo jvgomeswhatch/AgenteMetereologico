@@ -1,98 +1,133 @@
-Agente LLM Meteorológico | Desafio ClimaTempo (Open-Meteo + Ollama)
-📋 Descrição
-Este projeto apresenta um Agente de IA Resiliente capaz de fornecer previsões meteorológicas precisas utilizando modelos de linguagem locais. A solução conecta o Llama 3.2 1B (via Ollama) à API Open-Meteo, focando em estabilidade e integridade de dados através de camadas de validação e fallbacks determinísticos.
+🌦️ Agente LLM Meteorológico
+Desafio Técnico de IA | ClimaTempo 2026 — Open-Meteo + Ollama
+📌 Descrição
 
-O agente processa coordenadas geográficas (Latitude e Longitude) e retorna:
+Este projeto implementa um Agente de IA para previsão do tempo utilizando modelos de linguagem locais.
+A aplicação conecta o modelo Llama 3.2 1B (via Ollama) à API Open-Meteo, permitindo que um LLM consulte dados meteorológicos reais através de uma tool externa.
+
+O sistema foi projetado com foco em confiabilidade, incluindo validações e mecanismos de fallback para reduzir erros de interpretação do modelo.
+
+O agente recebe coordenadas geográficas (latitude e longitude) e retorna:
 
 📅 Data da previsão
 
-🌡️ Temperatura Máxima e Mínima (°C)
+🌡️ Temperatura mínima e máxima (°C)
 
-🌧️ Volume de Precipitação (mm)
+🌧️ Volume de precipitação (mm)
 
 🏗️ Arquitetura do Sistema
-O projeto foi desenvolvido seguindo princípios de modularização para facilitar a manutenção e testes independentes.
 
-Plaintext
+O projeto foi estruturado de forma modular, separando claramente interface, lógica do agente e integrações externas.
+
 agente/
 │
-├── app.py # Interface Web (Gradio) e lógica de Gatekeeper
-├── main.py # Orquestrador do Agente e Loop de Decisão
-├── config.py # Configurações globais e Logs
+├── app.py
+│ Interface Web (Gradio) + Gatekeeper de entrada
+│
+├── main.py
+│ Orquestrador do agente e loop de decisão
+│
+├── config.py
+│ Configurações globais e sistema de logs
 │
 ├── agent/
-│ ├── llm_client.py # Wrapper para comunicação com Ollama
-│ ├── tools_config.py # Definição técnica das ferramentas (JSON Schema)
-│ └── validator.py # Motor de consistência de dados (Anti-Alucinação)
+│ ├── llm_client.py
+│ │ Wrapper para comunicação com Ollama
+│ │
+│ ├── tools_config.py
+│ │ Definição das ferramentas em JSON Schema
+│ │
+│ └── validator.py
+│ Motor de validação de dados (anti-alucinação)
 │
 ├── tools/
-│ └── open_meteo.py # Integração direta com a API Open-Meteo
+│ └── open_meteo.py
+│ Integração direta com a API Open-Meteo
 │
-└── requirements.txt # Dependências do projeto
+└── requirements.txt
+Dependências do projeto
 🛠️ Tecnologias Utilizadas
+
 Python 3.9+
 
-Ollama (Hospedagem de LLM Local)
+Ollama — execução de LLM local
 
-Gradio (Interface de Usuário)
+Llama 3.2 1B
 
-OpenAI Python SDK (Interface compatível com o Ollama)
+Gradio — interface web
 
-Requests (Consumo de API REST)
+OpenAI Python SDK — interface compatível com Ollama
 
-🧠 Diferenciais de Engenharia (Camadas de Segurança)
-Para superar as limitações de modelos locais pequenos, foram implementadas as seguintes estratégias:
+Requests — consumo da API REST
 
-Gatekeeper de Entrada: Filtro preventivo no app.py que valida se o input do usuário possui potencial meteorológico antes de consumir recursos do LLM.
+Open-Meteo API — dados meteorológicos
 
-Fallback Determinístico (Regex): Caso o LLM não consiga formatar a chamada de função (Tool Call) corretamente, o sistema aciona um extrator via Expressão Regular para garantir que a previsão seja entregue.
+🧠 Diferenciais de Engenharia
 
-Proteção de Coordenadas: O agente verifica se o LLM tentou "inventar" ou alterar as coordenadas fornecidas pelo usuário (proteção contra alucinação geográfica).
+Para melhorar a confiabilidade do agente com um modelo pequeno (1B), foram implementadas algumas camadas de proteção:
 
-Módulo de Validação (Validator): Uma verificação pós-processamento que garante que os números exibidos no chat são exatamente os mesmos retornados pela API.
+🔎 Gatekeeper de Entrada
 
-Gestão de Contexto (Histórico): Recuperação inteligente de coordenadas de mensagens anteriores, permitindo perguntas como "e para os próximos dias?" sem repetição de dados.
+Valida se a pergunta do usuário está relacionada a previsão do tempo antes de acionar o LLM.
 
-🚀 Como Executar
+🔁 Fallback Determinístico
 
-1. Preparação do Ambiente
-   Bash
+Caso o modelo não execute corretamente a chamada da ferramenta, um extrator baseado em Regex tenta recuperar as coordenadas.
 
-# Criar ambiente virtual
+📍 Proteção de Coordenadas
 
+Evita que o modelo arredonde ou modifique latitude/longitude fornecidas pelo usuário.
+
+🛡️ Validação Anti-Alucinação
+
+O módulo validator.py garante que os números exibidos ao usuário correspondem exatamente aos dados retornados pela API.
+
+💬 Gestão de Contexto
+
+O agente pode recuperar coordenadas mencionadas anteriormente para responder perguntas de acompanhamento.
+
+🚀 Como Executar o Projeto
+1️⃣ Criar ambiente virtual
 python -m venv .venv
 
-# Ativar ambiente (Windows)
+Ativar o ambiente:
+
+Windows
 
 .venv\Scripts\activate
 
-# Instalar dependências
+Linux / Mac
 
-pip install -r requirements.txt 2. Configuração do LLM (Ollama)
-Certifique-se de que o Ollama está rodando e o modelo instalado:
+source .venv/bin/activate
+2️⃣ Instalar dependências
+pip install -r requirements.txt
+3️⃣ Configurar o Ollama
 
-Bash
+Instale e execute o servidor:
+
+ollama serve
+
+Baixe o modelo utilizado:
+
 ollama pull llama3.2:1b
-ollama serve 3. Inicialização
-Para testes em terminal:
-
-Bash
-python main.py
-Para interface visual (Gradio):
-
-Bash
+4️⃣ Executar a aplicação
 python app.py
-Acesse em: http://127.0.0.1:7860
 
-📊 Exemplos de Execução (Logs de Resiliência)
-O sistema registra cada etapa da tomada de decisão:
+A interface ficará disponível em:
 
-Identificação de Tool: INFO - LLM identificou a necessidade da TOOL com sucesso.
+http://127.0.0.1:7860
+💬 Exemplo de Uso
 
-Recuperação de Memória: INFO - Coordenadas recuperadas do HISTÓRICO: lat=-23.55, lon=-46.63
+Pergunta do usuário:
 
-Validação: INFO - Validação concluída: Todos os dados do chunk estão presentes na resposta.
+Qual a previsão do tempo para latitude -23.30 e longitude -45.96?
 
-👤 Desenvolvedor
+Resposta esperada:
+
+Data: 2026-03-11
+Temperatura mínima: 18°C
+Temperatura máxima: 27°C
+Precipitação: 2.4 mm
+
+👨‍💻 Desenvolvedor
 João Vitor Gomes dos Santos
-Desafio Técnico: Implementação de Agentes com Local LLMs e Function Calling.
